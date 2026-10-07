@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --brand: #1e64d3;
+  --ink: #0e1b4d;
+  --canvas: #f6f9ff;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-canvas text-ink antialiased;
+    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  *:focus-visible {
+    @apply outline-none ring-2 ring-brand/40;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-line;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-brand-border;
+  }
+}
+
+@layer components {
+  /* Page container used by every dashboard route */
+  .page {
+    @apply mx-auto w-full max-w-content px-4 py-6 sm:px-6 lg:px-8 lg:py-8;
+  }
+
+  .label-xs {
+    @apply text-[11px] font-bold uppercase tracking-wider text-muted;
+  }
+
+  .divider {
+    @apply h-px w-full bg-line;
+  }
+}
+
+/* Leaflet needs its container to have an explicit height */
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  border-radius: 1rem;
+  z-index: 0;
+}
