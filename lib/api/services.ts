@@ -13,12 +13,15 @@ import {
 import type {
   ActiveRequest,
   ClientDashboard,
+  ClosingReviewRequest,
   FiltersData,
   Habit,
   LoginResponse,
   ResignationDetail,
   ResignationSummary,
+  ReviewCriteriaData,
   ReviewsResponse,
+  TerminationRequest,
   TimeSlot,
   WorkerCard,
   WorkerDetail,
@@ -99,8 +102,13 @@ export const DashboardService = {
   getClientResignations: () => api.get<ResignationSummary[]>(`${API_DASHBOARD}/GetClientResignations`),
   getResignationDetail: (id: number | string) =>
     api.get<ResignationDetail>(`${API_DASHBOARD}/GetResignationDetail/${id}`),
-  confirmResignation: (payload: unknown) => api.post(`${API_DASHBOARD}/ConfirmResignation`, payload),
-  terminateContract: (payload: unknown) => api.post(`${API_DASHBOARD}/TerminateContract`, payload),
+  /** Criteria applicable to this contract (common + per-category groups). */
+  getReviewCriteria: (interviewId: number | string) =>
+    api.get<ReviewCriteriaData>(`${API_DASHBOARD}/GetReviewCriteria?interviewId=${interviewId}`),
+  confirmResignation: (payload: ClosingReviewRequest) =>
+    api.post(`${API_DASHBOARD}/ConfirmResignation`, payload),
+  terminateContract: (payload: TerminationRequest) =>
+    api.post(`${API_DASHBOARD}/TerminateContract`, payload),
   getLatestTermination: (workerId: number | string) =>
     api.get(`${API_DASHBOARD}/GetLatestTermination/${workerId}`),
   getWorkerEndContractDetails: (workerId: number | string) =>

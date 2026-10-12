@@ -6,11 +6,17 @@
  * development and a real host in production. Every endpoint constant below keeps
  * the exact same name and the exact same path as the mobile app used.
  */
-// export const SERVER_BASE =
-//   process.env.NEXT_PUBLIC_SERVER_BASE?.replace(/\/+$/, '') || 'http://192.168.100.13:5150';
-const IP_ADDRESS = 'localhost';
-const PORT = '5150';
-export const SERVER_BASE = `http://${IP_ADDRESS}:${PORT}`;
+/**
+ * Base URL of the shared ASP.NET backend.
+ *
+ * Preferred: set NEXT_PUBLIC_SERVER_BASE in .env.local / the deployment
+ * environment (see .env.example). Fallback is localhost:5150, which matches
+ * the backend's local `http` profile (0.0.0.0:5150) out of the box.
+ * Trailing slashes are stripped so every constant below joins cleanly.
+ */
+export const SERVER_BASE =
+  (process.env.NEXT_PUBLIC_SERVER_BASE?.replace(/\/+$/, '') as string | undefined) ||
+  'http://localhost:5150';
 
 
 export const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';

@@ -4,22 +4,29 @@
  * Port of `assets/components/Client/ResignationScreen.js`.
  *
  * Unchanged: GetResignationDetail/{id}, the notice-period progress bar, the
- * worker's review of the client, the "remarks are required" rule, the
- * ConfirmResignation body ({ InterviewId, Rating, Comment }) and the redirect
- * back to the resignations list. Confirmed resignations become read-only with
- * the saved rating, exactly like the mobile screen.
+ * worker's review of the client, and the "remarks are required" rule.
+ *
+ * Closing review is criteria-based (matches the current backend):
+ *   POST ConfirmResignation { InterviewId, Comment, CriteriaScores: [{CriteriaId, Score}] }
+ * The overall rating is derived server-side from the criteria scores — the old
+ * single-star `Rating` field is gone from the form and the payload. Every
+ * criterion returned by GetReviewCriteria must be rated before submit.
+ * Confirmed resignations become read-only with the saved review, exactly like
+ * the mobile screen.
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Briefcase, CalendarCheck, CheckCircle2, FileText, Quote } from 'lucide-react';
+import { Briefcase, CalendarCheck, CheckCircle2, FileText, Lock, Quote } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import PageHeader from '@/components/ui/PageHeader';
 import { Textarea } from '@/components/ui/Field';
-import { RatingInput, RatingStars } from '@/components/ui/Rating';
+import { RatingStars } from '@/components/ui/Rating';
 import { Loader } from '@/components/ui/States';
+import CriteriaBreakdown from '@/components/features/reviews/CriteriaBreakdown';
+import CriteriaReviewSection from '@/components/features/reviews/CriteriaReviewsSection';
 import { DashboardService } from '@/lib/api/services';
 import NotificationHelper from '@/lib/hooks/useNotification';
 
@@ -30,12 +37,14 @@ export default function ResignationDetailPage() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [data, setData] = useState<any>(null);
-  const [rating, setRating] = useState(3);
+  const [scores, setScores] = useState<Record<number, number>>({});
+  const [requiredTotal, setRequiredTotal] = useState(0);
   const [remarks, setRemarks] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const isConfirmed = data?.isConfirmed === true;
-  const shownRating = isConfirmed ? (data?.clientReview?.rating ?? 0) : rating;
+  const shownRating = data?.clientReview?.rating ?? 0;
+  const ratedCount = Object.values(scores).filter((v) => v > 0).length;
 
   const fetchResignationDetail = useCallback(async () => {
     try {
@@ -58,9 +67,20 @@ export default function ResignationDetailPage() {
     fetchResignationDetail();
   }, [resignationId, fetchResignationDetail, router]);
 
+  const handleScoreChange = (criteriaId: number, score: number) =>
+    setScores((prev) => ({ ...prev, [criteriaId]: score }));
+
   const handleConfirmResignation = async () => {
     if (!remarks.trim()) {
       NotificationHelper.showError('Please enter some remarks before confirming.');
+      return;
+    }
+    if (requiredTotal === 0) {
+      NotificationHelper.showError('Review criteria are still loading. Please wait a moment.');
+      return;
+    }
+    if (ratedCount < requiredTotal) {
+      NotificationHelper.showError(`Please rate every criterion (${ratedCount}/${requiredTotal} rated).`);
       return;
     }
 
@@ -68,8 +88,11 @@ export default function ResignationDetailPage() {
     try {
       await DashboardService.confirmResignation({
         InterviewId: data.interviewId,
-        Rating: rating,
         Comment: remarks,
+        CriteriaScores: Object.entries(scores).map(([criteriaId, score]) => ({
+          CriteriaId: Number(criteriaId),
+          Score: score,
+        })),
       });
       NotificationHelper.showSuccess('Resignation confirmed. Your review of the worker was saved.');
       router.push('/client/resignations');
@@ -199,11 +222,19 @@ export default function ResignationDetailPage() {
             </div>
           ) : (
             <>
-              <RatingInput value={rating} onChange={setRating} />
+              <p className="mb-3 text-sm text-subtle">
+                Rate each criterion for {data.workerName}, then write your remarks.
+              </p>
+              <CriteriaReviewSection
+                interviewId={data.interviewId}
+                scores={scores}
+                onScoreChange={handleScoreChange}
+                onLoaded={setRequiredTotal}
+              />
               <Textarea
                 className="mt-4"
                 label="Remarks"
-                placeholder="Share how this worker performed during the contract…"
+                placeholder="Enter your remarks here"
                 value={remarks}
                 onChange={(e) => setRemarks(e.target.value)}
               />

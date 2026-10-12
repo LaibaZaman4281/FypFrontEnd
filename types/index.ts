@@ -106,6 +106,11 @@ export interface Review {
   reviewerName?: string;
   reviewerImage?: string | null;
   reviewDate?: string;
+  /** Per-criterion breakdown ({ name, score }) when the backend returns it. */
+  criteria?: CriteriaDisplay[];
+  /** Formatted contract window (e.g. "2 m 3 d") on closing reviews. */
+  workedPeriod?: string;
+  endType?: string;
   [key: string]: any;
 }
 
@@ -167,13 +172,67 @@ export interface ResignationDetail extends ResignationSummary {
   [key: string]: any;
 }
 
-export interface CriminalRecordPayload {
-  WorkerId: number;
-  PoliceId: number;
-  FirNumber: string;
-  OffenseCategory: string;
-  OffenseDate: string;
-  IsFlagged: boolean;
-  IsBlocked: boolean;
-  CaseDetails: string;
+/* ------------------------------------------------------------------ */
+/* Closing reviews (criteria-based) — matches DashboardController's    */
+/* ClosingReviewRequest / TerminationRequest / GetReviewCriteria and   */
+/* the shapes returned by GetResignationDetail.                        */
+/* ------------------------------------------------------------------ */
+
+/** One criterion score in a closing-review submission ({ CriteriaId, Score }). */
+export interface CriteriaScore {
+  CriteriaId: number;
+  Score: number;
+}
+
+/** A criterion as returned by GET GetReviewCriteria ({ criteriaId, name }). */
+export interface ReviewCriteriaItem {
+  criteriaId: number;
+  name: string;
+}
+
+/** Per-category group of criteria returned by GetReviewCriteria. */
+export interface ReviewCriteriaGroup {
+  categoryId: number | null;
+  categoryName: string;
+  criteria: ReviewCriteriaItem[];
+}
+
+/** GET /api/Dashboard/GetReviewCriteria?interviewId= response. */
+export interface ReviewCriteriaData {
+  interviewId: number;
+  workerId: number;
+  common: ReviewCriteriaItem[];
+  professions: ReviewCriteriaGroup[];
+  totalCriteria: number;
+  allMandatory: boolean;
+}
+
+/** POST /api/Dashboard/ConfirmResignation body (backend: ClosingReviewRequest). */
+export interface ClosingReviewRequest {
+  InterviewId: number;
+  Comment?: string | null;
+  CriteriaScores: CriteriaScore[];
+}
+
+/** POST /api/Dashboard/TerminateContract body (backend: TerminationRequest). */
+export interface TerminationRequest {
+  InterviewId: number;
+  Reason: string;
+  Remarks?: string | null;
+  CriteriaScores: CriteriaScore[];
+}
+
+/** A displayed criteria breakdown entry ({ name, score }). */
+export interface CriteriaDisplay {
+  name?: string;
+  score?: number;
+}
+
+/** Review payload as returned inside GetResignationDetail / review lists. */
+export interface ClosingReviewDisplay {
+  rating?: number;
+  comment?: string;
+  date?: string;
+  workedPeriod?: string;
+  criteria?: CriteriaDisplay[];
 }

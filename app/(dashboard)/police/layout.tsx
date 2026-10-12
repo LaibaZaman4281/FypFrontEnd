@@ -10,8 +10,6 @@
 //   if (!allowed) return null;
 //   return <AppShell role="Police">{children}</AppShell>;
 // }
-
-
 'use client';
 
 import AppShell from '@/components/features/shell/AppShell';

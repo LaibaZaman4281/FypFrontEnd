@@ -5,6 +5,7 @@ import {
   ClipboardList,
   FileWarning,
   Gavel,
+  GraduationCap,
   Handshake,
   Heart,
   LayoutDashboard,
@@ -59,6 +60,8 @@ export const NAV: Record<UserRole, NavItem[]> = {
   ],
   Company: [
     { label: 'Worker Directory', href: '/company/directory', icon: Users, rnScreen: 'WorkerDirectoryScreen' },
+    { label: 'Course Management', href: '/company/courses', icon: GraduationCap, rnScreen: 'CompanyCourseDashboardScreen' },
+    { label: 'Company Profile', href: '/company/profile', icon: UserCircle, rnScreen: 'CompanyProfileScreen' },
   ],
   Police: [
     { label: 'Verification Portal', href: '/police/portal', icon: BadgeCheck, rnScreen: 'PoliceVerificationPortal' },
