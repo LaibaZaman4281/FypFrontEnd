@@ -80,11 +80,17 @@ export const DashboardService = {
   finalizeHiringDecision: (payload: unknown) => api.post(`${API_DASHBOARD}/FinalizeHiringDecision`, payload),
 
   /* ---- Worker: requests ---- */
-  getWorkerRequests: () => api.get(`${API_DASHBOARD}/GetWorkerRequests`),
+  getWorkerRequests: (interviewId?: number | string) =>
+    api.get(
+      `${API_DASHBOARD}/GetWorkerRequests${interviewId ? `?interviewId=${encodeURIComponent(String(interviewId))}` : ''}`,
+    ),
   getAcceptedWorkerRequests: () => api.get(`${API_DASHBOARD}/GetAcceptedWorkerRequests`),
   updateWorkerDecision: (id: number | string, payload: unknown) =>
     api.put(`${API_DASHBOARD}/UpdateWorkerDecision/${id}`, payload),
-  getWorkerJobConfirmations: () => api.get(`${API_DASHBOARD}/GetWorkerJobConfirmations`),
+  getWorkerJobConfirmations: (hiringId?: number | string) =>
+    api.get(
+      `${API_DASHBOARD}/GetWorkerJobConfirmations${hiringId ? `?hiringId=${encodeURIComponent(String(hiringId))}` : ''}`,
+    ),
   workerAcceptJobOffer: (id: number | string) => api.put(`${API_DASHBOARD}/WorkerAcceptJobOffer/${id}`),
   workerRejectJobOffer: (id: number | string) => api.put(`${API_DASHBOARD}/WorkerRejectJobOffer/${id}`),
   clientDismissWorkerRejection: (id: number | string) =>

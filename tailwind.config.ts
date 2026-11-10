@@ -23,6 +23,30 @@ const config: Config = {
         success: '#00B14F',
         danger: '#DC2626',
         warn: '#B45309',
+        /**
+         * Course palette — copied 1:1 from the React Native
+         * `assets/components/helpers/courseApi.js` `courseColors` map.
+         *
+         * These were missing, so `bg-course`, `text-course`, `text-course-ink`,
+         * `border-course-border`, … compiled to NOTHING. The company header
+         * band lost its blue background (white "Course Management" on a white
+         * page), the white "Add Course" button vanished, and the worker's
+         * "Browse Courses" card rendered as an empty white box with invisible
+         * white text. `text` in RN is `ink` here because `text` is already a
+         * Tailwind utility prefix.
+         */
+        course: {
+          DEFAULT: '#1565C0', // courseColors.primary
+          dark: '#0D47A1', // courseColors.dark
+          pale: '#EAF3FF', // courseColors.pale
+          background: '#F7FAFF', // courseColors.background
+          ink: '#172033', // courseColors.text
+          muted: '#64748B', // courseColors.muted
+          border: '#D9E5F3', // courseColors.border
+          success: '#16865C', // courseColors.success
+          warning: '#C47A00', // courseColors.warning
+          danger: '#C62828', // courseColors.danger
+        },
       },
       borderRadius: {
         xl: '14px',

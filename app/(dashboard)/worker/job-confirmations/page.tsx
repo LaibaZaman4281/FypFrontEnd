@@ -33,6 +33,7 @@ import { JobTypeBadge, ResidenceBadge, SlotTimeLabel } from '@/components/ui/Bad
 import { EmptyState, Loader } from '@/components/ui/States';
 import { DashboardService } from '@/lib/api/services';
 import NotificationHelper from '@/lib/hooks/useNotification';
+import ExclusiveJobNotice from '@/components/features/jobs/ExclusiveJobNotice';
 import { cn } from '@/lib/utils/cn';
 
 export default function JobConfirmationPage() {
@@ -41,10 +42,19 @@ export default function JobConfirmationPage() {
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  /* ?hiringId=<id> from a job notification — filtered server-side. */
+  const [focusHiringId, setFocusHiringId] = useState<string | null>(null);
+  const [queryReady, setQueryReady] = useState(false);
+
+  useEffect(() => {
+    setFocusHiringId(new URLSearchParams(window.location.search).get('hiringId'));
+    setQueryReady(true);
+  }, []);
+
   const fetchJobConfirmations = useCallback(async (showLoader = true) => {
     if (showLoader) setLoading(true);
     try {
-      const data: any = await DashboardService.getWorkerJobConfirmations();
+      const data: any = await DashboardService.getWorkerJobConfirmations(focusHiringId ?? undefined);
       setJobs(Array.isArray(data) ? data : []);
     } catch {
       NotificationHelper.showError('Failed to fetch job offers.');
@@ -52,11 +62,11 @@ export default function JobConfirmationPage() {
       setLoading(false);
       setIsRefreshing(false);
     }
-  }, []);
+  }, [focusHiringId]);
 
   useEffect(() => {
-    fetchJobConfirmations();
-  }, [fetchJobConfirmations]);
+    if (queryReady) fetchJobConfirmations();
+  }, [queryReady, fetchJobConfirmations]);
 
   const handleAcceptJob = async (hiringId: number) => {
     try {
@@ -191,6 +201,7 @@ export default function JobConfirmationPage() {
 
             return (
               <Card key={hiringId} className="relative overflow-hidden pl-6">
+                <ExclusiveJobNotice item={{ isExclusive: item.isExclusive, jobType: item.jobType }} variant="offer" className="mb-3" />
                 <span className={cn('absolute inset-y-0 left-0 w-1.5', accent)} />
 
                 <div className="flex items-center justify-between gap-2">

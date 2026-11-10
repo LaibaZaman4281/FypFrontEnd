@@ -26,6 +26,7 @@ import PageHeader from '@/components/ui/PageHeader';
 import { DashboardService } from '@/lib/api/services';
 import NotificationHelper from '@/lib/hooks/useNotification';
 import Storage from '@/lib/storage';
+import { reverseGeocodeCity } from '@/lib/utils/reverseGeocodeCity';
 import type { Coords, WorkerPin } from '@/components/features/map/LocationPicker';
 import type { UserRole } from '@/types';
 
@@ -119,14 +120,46 @@ function MapScreen() {
     }
   };
 
+  /* The sidebar link is a bare /map, so no lat/lng params arrive. Fall back to the
+     coordinates cached at the last save instead of dropping to the Islamabad default. */
+  useEffect(() => {
+    if (position) return;
+    const role = Storage.getItem('userRole');
+    const isWorker = role === 'Worker';
+    const lat = Storage.getItem(isWorker ? 'workerLatitude' : 'clientLatitude');
+    const lng = Storage.getItem(isWorker ? 'workerLongitude' : 'clientLongitude');
+    if (lat == null || lng == null) return;
+    const latitude = parseFloat(lat);
+    const longitude = parseFloat(lng);
+    if (!Number.isNaN(latitude) && !Number.isNaN(longitude)) setPosition({ latitude, longitude });
+  }, [position]);
+
+  /* Reverse-geocode the pin to the city the backend's search uses (Nominatim). */
+  const [city, setCity] = useState('');
+  useEffect(() => {
+    if (!position) {
+      setCity('');
+      return;
+    }
+    let cancelled = false;
+    void reverseGeocodeCity(position.latitude, position.longitude).then((value) => {
+      if (!cancelled) setCity(value);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [position]);
+
   const coordsLabel = useMemo(
     () => (position ? `${position.latitude.toFixed(5)}, ${position.longitude.toFixed(5)}` : '—'),
     [position],
   );
 
+  const fullSubtitle = city ? `${headerSubtitle} · ${city}` : headerSubtitle;
+
   return (
     <div>
-      <PageHeader title={headerTitle} subtitle={headerSubtitle} back />
+      <PageHeader title={headerTitle} subtitle={fullSubtitle} back />
 
       <Card padded={false} className="overflow-hidden p-4">
         <LocationPicker value={position} onChange={setPosition} workers={workers} height={520} />

@@ -94,7 +94,10 @@ export default function CompanyCoursesPage() {
   return (
     <div>
       {/* ───── Header band (mirrors the RN blue header bar) ───── */}
-      <header className="mb-6 flex flex-wrap items-center gap-4 rounded-3xl bg-course px-6 py-5 text-white">
+      <header
+        className="mb-6 flex flex-wrap items-center gap-4 rounded-3xl px-6 py-5"
+        style={{ background: 'linear-gradient(135deg, #1565C0 0%, #0D47A1 100%)', color: '#FFFFFF' }}
+      >
         <Link
           href="/company/directory"
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15 transition hover:bg-white/25"
@@ -105,19 +108,32 @@ export default function CompanyCoursesPage() {
         </Link>
 
         <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-extrabold tracking-tight sm:text-2xl">Course Management</h1>
-          <p className="text-sm text-white/80">Build skills. Certify achievement.</p>
+          <h1 className="text-xl font-extrabold tracking-tight sm:text-2xl" style={{ color: '#FFFFFF' }}>
+            Course Management
+          </h1>
+          <p className="text-sm" style={{ color: 'rgba(255,255,255,0.85)' }}>
+            Build skills. Certify achievement.
+          </p>
         </div>
 
         <div className="flex items-center gap-3">
+          {/* RN's header "+" (`CompanyCourseDashboardScreen.js:135-141`) — a white
+              rounded square with a plus. On the web it also carries a label so the
+              action is discoverable without hovering. */}
           <button
             type="button"
             onClick={() => router.push('/company/courses/new')}
-            className="flex h-11 w-11 items-center justify-center rounded-xl bg-white text-course transition hover:bg-white/90"
-            aria-label="Create course"
-            title="Create course"
+            className="flex h-11 items-center justify-center gap-2 rounded-xl px-4 shadow-sm ring-1 ring-black/5 transition hover:brightness-95 active:scale-[0.98]"
+            style={{ background: '#FFFFFF', color: '#1565C0' }}
+            aria-label="Add course"
+            title="Add course"
           >
-            <Plus size={21} />
+            <Plus size={21} strokeWidth={2.6} color="#1565C0" />
+            {/* label always visible — a bare white square on a pale band is
+                impossible to see, and RN's header only had the icon */}
+            <span className="text-sm font-extrabold" style={{ color: '#1565C0' }}>
+              Add Course
+            </span>
           </button>
 
           <Link href="/company/profile" aria-label="Company dashboard" title="Company Dashboard">

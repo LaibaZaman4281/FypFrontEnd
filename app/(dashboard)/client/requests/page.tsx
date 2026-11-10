@@ -23,6 +23,7 @@ import Card from '@/components/ui/Card';
 import PageHeader from '@/components/ui/PageHeader';
 import Tabs from '@/components/ui/Tabs';
 import { JobTypeBadge, SlotTimeLabel } from '@/components/ui/Badge';
+import ExclusiveJobNotice from '@/components/features/jobs/ExclusiveJobNotice';
 import { EmptyState, Loader } from '@/components/ui/States';
 import { DashboardService } from '@/lib/api/services';
 import NotificationHelper from '@/lib/hooks/useNotification';
@@ -35,6 +36,23 @@ export default function ClientActiveRequestsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('All');
   const [interactingIds, setInteractingIds] = useState<number[]>([]);
+  /* `GetActiveRequests` does not project Interview.IsExclusive, so the flag is
+     recovered from GetClientWorkerDecisions (which does) and matched on
+     interviewId. Rows carry their own isExclusive when the backend adds it. */
+  const [exclusiveByInterview, setExclusiveByInterview] = useState<Record<string, boolean>>({});
+
+  /**
+   * The card's view of a request for `ExclusiveJobNotice`. The row's own flag wins
+   * if the backend ever adds it; otherwise the decisions lookup fills it in.
+   */
+  const exclusiveView = (item: any) => {
+    const own = item?.isExclusive ?? item?.IsExclusive;
+    const id = item?.interviewId ?? item?.id;
+    return {
+      isExclusive: own === true || exclusiveByInterview[String(id)] === true,
+      jobType: item?.jobType,
+    };
+  };
 
   const sortRequestsByInterviewIdDesc = (list: any[] = []) =>
     [...list].sort((a, b) => Number(b.interviewId || b.id || 0) - Number(a.interviewId || a.id || 0));
@@ -45,6 +63,23 @@ export default function ClientActiveRequestsPage() {
       const clientId = Storage.getItem('clientId');
       const data = await DashboardService.getActiveRequests(clientId ?? '');
       setRequests(sortRequestsByInterviewIdDesc(Array.isArray(data) ? data : []));
+
+      /* Secondary lookup, never fatal: without it the pending cards simply show
+         no exclusive marker (exactly what the RN screen does). */
+      try {
+        const decisions: any = await DashboardService.getClientWorkerDecisions();
+        const map: Record<string, boolean> = {};
+        for (const row of Array.isArray(decisions) ? decisions : []) {
+          const id = row?.interviewId ?? row?.InterviewId;
+          if (id == null) continue;
+          const flag = row?.isExclusive ?? row?.IsExclusive;
+          const jobType = row?.jobType ?? row?.JobType;
+          map[String(id)] = flag === true && String(jobType ?? '').trim().toLowerCase() === 'full-time';
+        }
+        setExclusiveByInterview(map);
+      } catch {
+        /* ignored — see above */
+      }
     } catch {
       NotificationHelper.showError('Failed to load requests.');
     } finally {
@@ -223,8 +258,9 @@ export default function ClientActiveRequestsPage() {
                       </span>
                     </div>
 
-                    <div className="mt-2 flex flex-wrap gap-1.5">
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
                       <JobTypeBadge jobType={item.jobType} />
+                      <ExclusiveJobNotice item={exclusiveView(item)} variant="commitment" />
                       <SlotTimeLabel startTime={item.slotStartTime} endTime={item.slotEndTime} />
                     </div>
 

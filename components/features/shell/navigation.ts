@@ -1,5 +1,6 @@
 import {
   BadgeCheck,
+  Bell,
   Building2,
   CalendarCheck,
   ClipboardList,
@@ -16,7 +17,6 @@ import {
   Star,
   UserCircle,
   UserMinus,
-  Users,
   Wrench,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -39,7 +39,7 @@ export const NAV: Record<UserRole, NavItem[]> = {
   Client: [
     { label: 'Find Services', href: '/client/find-service', icon: Search, rnScreen: 'FindServiceScreen' },
     { label: 'My Dashboard', href: '/client/dashboard', icon: LayoutDashboard, rnScreen: 'UserDashboardScreen' },
-    { label: 'Active Requests', href: '/client/requests', icon: ClipboardList, rnScreen: 'ActiveRequestScreen' },
+    { label: 'Interview Requests', href: '/client/requests', icon: ClipboardList, rnScreen: 'ActiveRequestScreen' },
     { label: 'Worker Decisions', href: '/client/decisions', icon: Handshake, rnScreen: 'WorkerDecisionScreen' },
     { label: 'Resignations', href: '/client/resignations', icon: UserMinus, rnScreen: 'ResignationsScreen' },
     { label: 'My Location', href: '/map', icon: MapPin, rnScreen: 'MapScreen' },
@@ -47,6 +47,7 @@ export const NAV: Record<UserRole, NavItem[]> = {
   ],
   Worker: [
     { label: 'Dashboard', href: '/worker/dashboard', icon: LayoutDashboard, rnScreen: 'WorkerDashboardScreen' },
+    { label: 'Notifications', href: '/worker/notifications', icon: Bell, rnScreen: 'WorkerNotificationsScreen' },
     { label: 'Interview Requests', href: '/worker/requests', icon: ClipboardList, rnScreen: 'ActiveRequestsScreen' },
     { label: 'Accepted Requests', href: '/worker/accepted', icon: CalendarCheck, rnScreen: 'AcceptedRequestScreen' },
     { label: 'Job Offers', href: '/worker/job-confirmations', icon: Handshake, rnScreen: 'JobConfirmationScreen' },
@@ -59,7 +60,11 @@ export const NAV: Record<UserRole, NavItem[]> = {
     { label: 'Service Location', href: '/map', icon: MapPin, rnScreen: 'MapScreen' },
   ],
   Company: [
-    { label: 'Worker Directory', href: '/company/directory', icon: Users, rnScreen: 'WorkerDirectoryScreen' },
+    // RN has no sidebar at all: the company lands on `CompanyCourseDashboardScreen`
+    // and the worker directory is reached from that screen's header icon
+    // (`CompanyCourseDashboardScreen.js:131`), never from a menu entry. The route
+    // still exists at /company/directory for that header button and the back
+    // links from /company/workers/[id].
     { label: 'Course Management', href: '/company/courses', icon: GraduationCap, rnScreen: 'CompanyCourseDashboardScreen' },
     { label: 'Company Profile', href: '/company/profile', icon: UserCircle, rnScreen: 'CompanyProfileScreen' },
   ],
@@ -71,7 +76,7 @@ export const NAV: Record<UserRole, NavItem[]> = {
 export const ROLE_HOME: Record<UserRole, string> = {
   Client: '/client/find-service',
   Worker: '/worker/dashboard',
-  Company: '/company/directory',
+  Company: '/company/courses',
   Police: '/police/portal',
 };
 

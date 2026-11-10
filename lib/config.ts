@@ -19,8 +19,6 @@ export const SERVER_BASE =
   'http://localhost:5150';
 
 
-export const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
-
 export const API_DASHBOARD = `${SERVER_BASE}/api/Dashboard`;
 export const API_AUTH = `${SERVER_BASE}/api/Auth`;
 export const API_ACCOUNT = `${SERVER_BASE}/api/AccountCreation`;

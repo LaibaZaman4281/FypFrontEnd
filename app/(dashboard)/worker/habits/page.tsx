@@ -1,58 +1,80 @@
 'use client';
 
 /**
- * Port of `assets/components/Worker/MyHabitsScreen.js`.
- * Same parallel load of Habits/GetHabits + Habits/GetWorkerHabits/{workerId},
- * the same "keep at least one habit ticked" rule, the same
- * UpdateWorkerHabits body ({ workerId, habitIds }) and dirty-state tracking.
+ * Port of `assets/components/Worker/MyHabitsScreen.js` (non-signup mode).
+ *
+ * Habit logic now comes from `lib/habits.ts`, which is the single transcription of
+ * the RN rules — the same module the signup step and the client filter use, so the
+ * three screens can no longer drift apart:
+ *
+ *   - `normalizeHabitIds` (unique positive ints) applied to what the server returns
+ *   - `toggleHabitSelection` — radio semantics inside an `exclusiveGroup`
+ *   - `findExclusiveGroupConflict` checked before saving, exactly like RN, which
+ *     matters when a pre-existing row already holds both halves of a pair
+ *   - "keep at least one habit ticked"
+ *   - `UpdateWorkerHabits` body `{ workerId, habitIds }`, adopting the ids the
+ *     server echoes back (it may prune anything no longer selectable)
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import PageHeader from '@/components/ui/PageHeader';
 import { EmptyState, Loader } from '@/components/ui/States';
-import { HabitsService } from '@/lib/api/services';
+import HabitChoice from '@/components/features/habits/HabitChoice';
+import {
+  fetchWorkerHabitCatalog,
+  fetchWorkerHabits,
+  findExclusiveGroupConflict,
+  HABIT_COPY,
+  normalizeHabitIds,
+  saveWorkerHabits,
+  toggleHabitSelection,
+  type HabitRow,
+} from '@/lib/habits';
 import NotificationHelper from '@/lib/hooks/useNotification';
 import Storage from '@/lib/storage';
-import { cn } from '@/lib/utils/cn';
 
 export default function MyHabitsPage() {
   const router = useRouter();
 
-  const [catalog, setCatalog] = useState<any[]>([]);
+  const [catalog, setCatalog] = useState<HabitRow[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [savedIds, setSavedIds] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   const fetchAll = useCallback(async () => {
-    try {
-      const workerId = Storage.getItem('workerId');
-      if (!workerId) {
-        NotificationHelper.showError('Session not found. Please login again.');
-        router.replace('/login');
-        return;
-      }
+    const workerId = Storage.getItem('workerId');
+    if (!workerId) {
+      NotificationHelper.showError('Session not found. Please login again.');
+      router.replace('/login');
+      return;
+    }
 
+    setLoadError('');
+
+    try {
+      /* RN loads both in parallel; the catalogue failure is a toast, not a crash. */
       const [list, mine] = await Promise.all([
-        HabitsService.getHabits().catch(() => {
-          NotificationHelper.showError('Could not load the habit list.');
-          return [] as any[];
+        fetchWorkerHabitCatalog().catch(() => {
+          NotificationHelper.showError(HABIT_COPY.catalogFailed);
+          return [] as HabitRow[];
         }),
-        HabitsService.getWorkerHabits(workerId).catch(() => null),
+        fetchWorkerHabits(workerId).catch(() => [] as number[]),
       ]);
 
-      setCatalog(Array.isArray(list) ? list : []);
-
-      const habitIds = Array.isArray((mine as any)?.habitIds) ? (mine as any).habitIds : [];
-      setSelectedIds(habitIds);
-      setSavedIds(habitIds);
+      setCatalog(list);
+      setSelectedIds(mine);
+      setSavedIds(mine);
+      if (list.length === 0) setLoadError(HABIT_COPY.catalogFailed);
     } catch {
-      NotificationHelper.showError('Network error while loading habits.');
+      NotificationHelper.showError(HABIT_COPY.networkFailed);
+      setLoadError(HABIT_COPY.networkFailed);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -60,36 +82,46 @@ export default function MyHabitsPage() {
   }, [router]);
 
   useEffect(() => {
-    fetchAll();
+    void fetchAll();
   }, [fetchAll]);
 
   const toggleHabit = (habitId: number) => {
-    setSelectedIds((prev) => (prev.includes(habitId) ? prev.filter((id) => id !== habitId) : [...prev, habitId]));
+    setSelectedIds((prev) => toggleHabitSelection(prev, habitId, catalog));
   };
 
-  const hasChanges = selectedIds.length !== savedIds.length || selectedIds.some((id) => !savedIds.includes(id));
+  const hasChanges =
+    selectedIds.length !== savedIds.length || selectedIds.some((id) => !savedIds.includes(id));
+
+  const exclusiveConflict = findExclusiveGroupConflict(selectedIds, catalog);
 
   const handleSave = async () => {
+    /* Same two guards as RN, in the same order. */
+    if (exclusiveConflict) {
+      NotificationHelper.showError(HABIT_COPY.conflict);
+      return;
+    }
     if (selectedIds.length === 0) {
-      NotificationHelper.showError('Please keep at least one habit ticked.');
+      NotificationHelper.showError(HABIT_COPY.emptySelection);
+      return;
+    }
+
+    const workerId = Storage.getItem('workerId');
+    if (!workerId) {
+      NotificationHelper.showError('Session not found. Please login again.');
+      router.replace('/login');
       return;
     }
 
     try {
-      const workerId = Storage.getItem('workerId');
       setIsSaving(true);
-      const result: any = await HabitsService.updateWorkerHabits({
-        workerId: Number(workerId),
-        habitIds: selectedIds,
-      });
-
-      const saved = Array.isArray(result?.habitIds) ? result.habitIds : selectedIds;
+      const { message, habitIds } = await saveWorkerHabits(workerId, selectedIds);
+      const saved = normalizeHabitIds(habitIds.length > 0 ? habitIds : selectedIds);
       setSelectedIds(saved);
       setSavedIds(saved);
-      NotificationHelper.showSuccess(result?.message || 'Habits updated.');
+      NotificationHelper.showSuccess(message || 'Habits updated.');
       router.push('/worker/dashboard');
     } catch (error: any) {
-      NotificationHelper.showError(error?.message || 'Could not save your habits.');
+      NotificationHelper.showError(error?.message || HABIT_COPY.saveFailed);
     } finally {
       setIsSaving(false);
     }
@@ -110,7 +142,7 @@ export default function MyHabitsPage() {
             icon={<RefreshCw size={15} className={isRefreshing ? 'animate-spin' : ''} />}
             onClick={() => {
               setIsRefreshing(true);
-              fetchAll();
+              void fetchAll();
             }}
           >
             Refresh
@@ -120,37 +152,55 @@ export default function MyHabitsPage() {
 
       <Card>
         {catalog.length === 0 ? (
-          <EmptyState title="Could not load the habit list." message="Check your connection and refresh." />
+          <EmptyState
+            title={loadError || HABIT_COPY.catalogFailed}
+            message="Check your connection and refresh."
+            action={
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setIsRefreshing(true);
+                  void fetchAll();
+                }}
+              >
+                Retry
+              </Button>
+            }
+          />
         ) : (
           <>
             <div className="grid gap-2 sm:grid-cols-2">
-              {catalog.map((habit: any) => {
+              {catalog.map((habit) => {
                 const habitId = habit.habitId ?? habit.id;
-                const isChecked = selectedIds.includes(habitId);
                 return (
-                  <button
+                  <HabitChoice
                     key={habitId}
-                    type="button"
-                    onClick={() => toggleHabit(habitId)}
-                    className={cn(
-                      'flex items-center gap-2.5 rounded-xl border px-3 py-3 text-left text-sm font-semibold transition',
-                      isChecked ? 'border-brand bg-brand-light text-brand' : 'border-line bg-white text-subtle hover:bg-canvas',
-                    )}
-                  >
-                    <span className={cn('flex h-5 w-5 items-center justify-center rounded border', isChecked ? 'border-brand bg-brand text-white' : 'border-line')}>
-                      {isChecked && <Check size={13} />}
-                    </span>
-                    {habit.name ?? habit.habitName}
-                  </button>
+                    habit={habit}
+                    selected={selectedIds.includes(Number(habitId))}
+                    onToggle={() => toggleHabit(Number(habitId))}
+                  />
                 );
               })}
             </div>
+
+            {exclusiveConflict && (
+              <p className="mt-3 rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-danger">
+                {HABIT_COPY.conflict}
+              </p>
+            )}
 
             <p className="mt-3 text-xs font-semibold text-subtle">
               {selectedIds.length} habit{selectedIds.length === 1 ? '' : 's'} selected
             </p>
 
-            <Button className="mt-5" size="lg" fullWidth disabled={!hasChanges} loading={isSaving} onClick={handleSave}>
+            <Button
+              className="mt-5"
+              size="lg"
+              fullWidth
+              disabled={!hasChanges || Boolean(exclusiveConflict)}
+              loading={isSaving}
+              onClick={handleSave}
+            >
               {hasChanges ? 'Save changes' : 'No changes to save'}
             </Button>
           </>

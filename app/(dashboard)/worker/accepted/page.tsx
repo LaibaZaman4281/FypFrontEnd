@@ -18,6 +18,7 @@ import { JobTypeBadge, ResidenceBadge, SlotTimeLabel } from '@/components/ui/Bad
 import { EmptyState, Loader } from '@/components/ui/States';
 import { DashboardService } from '@/lib/api/services';
 import NotificationHelper from '@/lib/hooks/useNotification';
+import ExclusiveJobNotice from '@/components/features/jobs/ExclusiveJobNotice';
 
 export default function WorkerAcceptedRequestsPage() {
   const [acceptedRequests, setAcceptedRequests] = useState<any[]>([]);
@@ -41,7 +42,7 @@ export default function WorkerAcceptedRequestsPage() {
 
   const handleReject = async (id: number) => {
     try {
-      await DashboardService.updateWorkerDecision(id, { decision: 'Rejected' });
+      await DashboardService.updateWorkerDecision(id, { workerDecision: 'Rejected' });
       NotificationHelper.showSuccess('Request Rejected successfully.');
       setAcceptedRequests((prev) => prev.filter((r) => r.id !== id));
     } catch {
@@ -85,6 +86,8 @@ export default function WorkerAcceptedRequestsPage() {
                 <ResidenceBadge isResidenceProvided={item.isResidenceProvided} />
                 <SlotTimeLabel startTime={item.slotStartTime} endTime={item.slotEndTime} />
               </div>
+
+              <ExclusiveJobNotice item={item} variant="request" />
 
               {item.address && <p className="mt-3 text-sm text-subtle">{item.address}</p>}
               {item.time && <p className="mt-1 text-xs text-subtle">{item.time}</p>}

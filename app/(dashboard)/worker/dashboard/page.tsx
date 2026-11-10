@@ -312,6 +312,7 @@
 //             </Card>
 //           </Link>
 
+
 //           <Card className="lg:col-span-2">
 //             <div className="flex flex-wrap items-center justify-between gap-4">
 //               <div>
@@ -717,6 +718,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
+  ArrowRight,
   Award,
   Bell,
   BookOpen,
@@ -744,6 +746,7 @@ import Toggle from '@/components/ui/Toggle';
 import { Input } from '@/components/ui/Field';
 import { RatingStars } from '@/components/ui/Rating';
 import { EmptyState, Loader } from '@/components/ui/States';
+import ReviewCard from '@/components/features/reviews/ReviewCard';
 import { DashboardService, SlotsService } from '@/lib/api/services';
 import { ApiError } from '@/lib/api/client';
 import NotificationHelper from '@/lib/hooks/useNotification';
@@ -989,20 +992,46 @@ export default function WorkerDashboardPage() {
       {activeTab === 'Overview' && (
         <div className="grid gap-5 lg:grid-cols-2">
           {/* Course management — intentionally first so it is immediately visible */}
-          <Link href="/worker/courses">
-            <Card hoverable className="h-full border-0 bg-course text-white">
-              <GraduationCap size={26} />
-              <p className="mt-3 text-base font-extrabold">Browse Courses</p>
-              <p className="mt-1 text-sm text-white/80">Enroll in company training</p>
-            </Card>
+          <Link href="/worker/courses" className="block">
+            {/*
+              Inline styles on purpose. The Tailwind `course` palette depends on
+              tailwind.config.ts being re-read (dev-server restart) and on CSS
+              order against Card's own `bg-white`; this tile must stay visible no
+              matter what the stylesheet says, so the colour is hard-coded.
+            */}
+            <div
+              className="h-full rounded-2xl p-5 shadow-card transition hover:-translate-y-0.5 hover:shadow-pop"
+              style={{ background: 'linear-gradient(135deg, #1565C0 0%, #0D47A1 100%)' }}
+            >
+              <GraduationCap size={26} color="#FFFFFF" />
+              <p className="mt-3 text-base font-extrabold" style={{ color: '#FFFFFF' }}>
+                Browse Courses
+              </p>
+              <p className="mt-1 text-sm" style={{ color: 'rgba(255,255,255,0.85)' }}>
+                Enroll in company training
+              </p>
+              <span
+                className="mt-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold"
+                style={{ background: 'rgba(255,255,255,0.18)', color: '#FFFFFF' }}
+              >
+                View catalogue <ArrowRight size={13} color="#FFFFFF" />
+              </span>
+            </div>
           </Link>
 
-          <Link href="/worker/my-courses">
-            <Card hoverable className="h-full border-course-border">
-              <Award size={26} className="text-course" />
-              <p className="mt-3 text-base font-extrabold text-course-ink">My Learning</p>
-              <p className="mt-1 text-sm text-course-muted">Courses and certificates</p>
-            </Card>
+          <Link href="/worker/my-courses" className="block">
+            <div
+              className="h-full rounded-2xl border p-5 shadow-card transition hover:-translate-y-0.5 hover:shadow-pop"
+              style={{ background: '#FFFFFF', borderColor: '#D9E5F3' }}
+            >
+              <Award size={26} color="#1565C0" />
+              <p className="mt-3 text-base font-extrabold" style={{ color: '#172033' }}>
+                My Learning
+              </p>
+              <p className="mt-1 text-sm" style={{ color: '#64748B' }}>
+                Courses and certificates
+              </p>
+            </div>
           </Link>
 
           <Card className="lg:col-span-2">
@@ -1320,19 +1349,25 @@ export default function WorkerDashboardPage() {
             <EmptyState title="No reviews submitted yet." />
           ) : (
             reviewsList.map((review: any, index: number) => (
-              <Card key={review.reviewId ?? index}>
-                <div className="flex items-start gap-3">
-                  <Avatar src={review.reviewerImage} name={review.reviewerName} size="sm" />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="truncate text-sm font-bold text-ink">{review.reviewerName || 'Client'}</p>
-                      <RatingStars value={review.rating} />
-                    </div>
-                    <p className="text-xs text-subtle">{review.date || review.reviewDate}</p>
-                    <p className="mt-1.5 text-sm italic text-subtle">&quot;{review.comment}&quot;</p>
-                  </div>
-                </div>
-              </Card>
+              /* Same ReviewCard the rest of the app uses, with RN's exact field
+                 fallbacks (`reviewerName || name || clientName || 'Customer'`).
+                 GetWorkerReviews sends `name`; reading only `reviewerName` is why
+                 every row showed as a nameless "Client" with a "?" avatar, and
+                 why the worked period / end reason / criteria never appeared. */
+              <ReviewCard
+                key={review.id ?? review.reviewId ?? index}
+                name={review.reviewerName || review.name || review.clientName || 'Customer'}
+                image={review.reviewerImage || review.clientImage || review.picture}
+                nameHref={review.clientId ? `/client/profile?clientId=${review.clientId}` : undefined}
+                rating={Number(review.rating) || 0}
+                date={review.date || review.reviewDate}
+                workedPeriod={review.workedPeriod}
+                endType={review.endType}
+                endReasonType={review.endReasonType}
+                endReason={review.endReason}
+                text={review.comment || review.reviewText || ''}
+                criteria={review.criteria}
+              />
             ))
           )}
         </div>

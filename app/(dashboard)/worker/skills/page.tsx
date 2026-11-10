@@ -32,6 +32,9 @@ export default function WorkerSkillsPage() {
   const [loading, setLoading] = useState(true);
   const [skills, setSkills] = useState<SkillRecord[]>([]);
   const [experiences, setExperiences] = useState<ExperienceRecord[]>([]);
+  /* UpdateWorker assigns every scalar unconditionally, so anything omitted here is
+     written as null/0. The detail we already load carries the real values. */
+  const [profile, setProfile] = useState<any>(null);
 
   const load = useCallback(async () => {
     const workerId = Storage.getItem('workerId');
@@ -42,6 +45,7 @@ export default function WorkerSkillsPage() {
 
     try {
       const data: any = await DashboardService.getWorkerDetail(workerId);
+      setProfile(data);
 
       if (Array.isArray(data?.rawWorkerCategories)) {
         setSkills(
@@ -84,11 +88,18 @@ export default function WorkerSkillsPage() {
     try {
       const form = new FormData();
       form.append('WorkerId', workerId);
-      form.append('Name', Storage.getItem('userName') || '');
-      form.append('Phone', Storage.getItem('userPhone') || '');
-      form.append('Address', Storage.getItem('userAddress') || '');
-      form.append('Email', Storage.getItem('userEmail') || '');
+      /* Prefer the freshly loaded profile over localStorage: the stored identity is
+         only written at login, so using it here used to revert a saved profile edit. */
+      form.append('Name', profile?.name ?? Storage.getItem('userName') ?? '');
+      form.append('Phone', profile?.phone ?? Storage.getItem('userPhone') ?? '');
+      form.append('Address', profile?.address ?? Storage.getItem('userAddress') ?? '');
+      form.append('Email', profile?.email ?? Storage.getItem('userEmail') ?? '');
       form.append('Password', '');
+      form.append('Cnic', String(profile?.cnic ?? ''));
+      form.append('Age', String(profile?.age ?? 0));
+      form.append('Salary', String(profile?.salary ?? 0));
+      form.append('Gender', String(profile?.gender ?? 'Male'));
+      form.append('Bio', String(profile?.bio ?? ''));
       form.append('skillsJson', JSON.stringify(nextSkills));
       form.append('experiencesJson', JSON.stringify(nextExperiences));
 

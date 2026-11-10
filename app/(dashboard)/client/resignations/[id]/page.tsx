@@ -1,23 +1,8 @@
 'use client';
 
-/**
- * Port of `assets/components/Client/ResignationScreen.js`.
- *
- * Unchanged: GetResignationDetail/{id}, the notice-period progress bar, the
- * worker's review of the client, and the "remarks are required" rule.
- *
- * Closing review is criteria-based (matches the current backend):
- *   POST ConfirmResignation { InterviewId, Comment, CriteriaScores: [{CriteriaId, Score}] }
- * The overall rating is derived server-side from the criteria scores — the old
- * single-star `Rating` field is gone from the form and the payload. Every
- * criterion returned by GetReviewCriteria must be rated before submit.
- * Confirmed resignations become read-only with the saved review, exactly like
- * the mobile screen.
- */
-
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Briefcase, CalendarCheck, CheckCircle2, FileText, Lock, Quote } from 'lucide-react';
+import { Briefcase, CalendarCheck, CheckCircle2, FileText, Lock, Quote, Sparkles } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
@@ -27,34 +12,58 @@ import { RatingStars } from '@/components/ui/Rating';
 import { Loader } from '@/components/ui/States';
 import CriteriaBreakdown from '@/components/features/reviews/CriteriaBreakdown';
 import CriteriaReviewSection from '@/components/features/reviews/CriteriaReviewsSection';
+import ReviewEndReason from '@/components/features/reviews/ReviewEndReason';
 import { DashboardService } from '@/lib/api/services';
 import NotificationHelper from '@/lib/hooks/useNotification';
+import type { ResignationDetail } from '@/types/resignations';
 
+/**
+ * Port of `assets/components/Client/ResignationScreen.js`.
+ *
+ * The acceptance/review split is the newer workflow (backend resignation v2):
+ *   - `isAccepted`     the seven-day notice period ended, manually or automatically
+ *   - `reviewSubmitted` the CLIENT has left a closing review
+ *   - `canAccept`      the contract is still open, so confirming is meaningful
+ *
+ * Only the client's own review counts as "this resignation has been reviewed";
+ * the review the WORKER writes while resigning used to satisfy that check, which
+ * is why this screen once froze itself before the client had done anything.
+ */
 export default function ResignationDetailPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
-  const resignationId = params.id;
+  const resignationId = params?.id;
 
   const [isLoading, setIsLoading] = useState(true);
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<ResignationDetail | null>(null);
   const [scores, setScores] = useState<Record<number, number>>({});
   const [requiredTotal, setRequiredTotal] = useState(0);
   const [remarks, setRemarks] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const isConfirmed = data?.isConfirmed === true;
+  const submittingRef = useRef(false);
+  const detailVersion = useRef(0);
+
+  const isAccepted = typeof data?.isAccepted === 'boolean' ? data.isAccepted : data?.isConfirmed === true;
+  const hasClientReview = data?.reviewSubmitted === true || !!data?.clientReview;
+  const canAccept = typeof data?.canAccept === 'boolean' ? data.canAccept : !data?.isConfirmed;
+  const canSubmit = canAccept || (isAccepted && !hasClientReview);
+
   const shownRating = data?.clientReview?.rating ?? 0;
-  const ratedCount = Object.values(scores).filter((v) => v > 0).length;
+  const ratedCount = Object.values(scores).filter((value) => value > 0).length;
 
   const fetchResignationDetail = useCallback(async () => {
+    const version = ++detailVersion.current;
     try {
-      const json = await DashboardService.getResignationDetail(resignationId);
+      const json = (await DashboardService.getResignationDetail(resignationId)) as unknown as ResignationDetail;
+      if (version !== detailVersion.current) return;
       setData(json);
     } catch {
+      if (version !== detailVersion.current) return;
       NotificationHelper.showError('Failed to load details.');
       router.back();
     } finally {
-      setIsLoading(false);
+      if (version === detailVersion.current) setIsLoading(false);
     }
   }, [resignationId, router]);
 
@@ -64,42 +73,68 @@ export default function ResignationDetailPage() {
       router.back();
       return;
     }
-    fetchResignationDetail();
+
+    setData(null);
+    setScores({});
+    setRemarks('');
+    setRequiredTotal(0);
+    setIsLoading(true);
+    submittingRef.current = false;
+    setIsSubmitting(false);
+    void fetchResignationDetail();
+
+    return () => {
+      detailVersion.current++;
+    };
   }, [resignationId, fetchResignationDetail, router]);
 
   const handleScoreChange = (criteriaId: number, score: number) =>
-    setScores((prev) => ({ ...prev, [criteriaId]: score }));
+    setScores((previous) => ({ ...previous, [criteriaId]: score }));
 
   const handleConfirmResignation = async () => {
-    if (!remarks.trim()) {
+    if (submittingRef.current || !data?.interviewId || !canSubmit) return;
+
+    if (!hasClientReview && !remarks.trim()) {
       NotificationHelper.showError('Please enter some remarks before confirming.');
       return;
     }
-    if (requiredTotal === 0) {
+    if (!hasClientReview && requiredTotal === 0) {
       NotificationHelper.showError('Review criteria are still loading. Please wait a moment.');
       return;
     }
-    if (ratedCount < requiredTotal) {
+    if (!hasClientReview && ratedCount < requiredTotal) {
       NotificationHelper.showError(`Please rate every criterion (${ratedCount}/${requiredTotal} rated).`);
       return;
     }
 
+    submittingRef.current = true;
     setIsSubmitting(true);
+    const version = detailVersion.current;
+
     try {
       await DashboardService.confirmResignation({
+        ResignationId: data.resignationId,
         InterviewId: data.interviewId,
         Comment: remarks,
         CriteriaScores: Object.entries(scores).map(([criteriaId, score]) => ({
           CriteriaId: Number(criteriaId),
           Score: score,
         })),
-      });
-      NotificationHelper.showSuccess('Resignation confirmed. Your review of the worker was saved.');
+      } as never);
+
+      if (version !== detailVersion.current) return;
+      NotificationHelper.showSuccess(
+        isAccepted ? 'Your review of the worker was saved.' : 'Resignation confirmed. Your review of the worker was saved.',
+      );
       router.push('/client/resignations');
-    } catch (error: any) {
-      NotificationHelper.showError(error?.message || 'Failed to confirm.');
+    } catch (error) {
+      if (version !== detailVersion.current) return;
+      NotificationHelper.showError(error instanceof Error ? error.message : 'Failed to confirm.');
     } finally {
-      setIsSubmitting(false);
+      if (version === detailVersion.current) {
+        submittingRef.current = false;
+        setIsSubmitting(false);
+      }
     }
   };
 
@@ -112,16 +147,33 @@ export default function ResignationDetailPage() {
     <div className="mx-auto max-w-4xl">
       <PageHeader title="Resignation" back backHref="/client/resignations" />
 
+      {data.acceptanceMode === 'Automatic' && (
+        <Card className="mb-5 border-emerald-200 bg-emerald-50">
+          <div className="flex items-start gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+              <Sparkles size={17} />
+            </span>
+            <div>
+              <p className="text-sm font-bold text-emerald-900">Automatically accepted</p>
+              <p className="mt-1 text-sm leading-relaxed text-emerald-800">
+                The seven-day notice period ended. This worker is now in Past.{' '}
+                {hasClientReview ? 'Your review is saved.' : 'You can still submit your rating and review below.'}
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
       <div className="grid gap-5 lg:grid-cols-2">
         {/* ---- Who is resigning ---- */}
         <Card className="lg:col-span-2">
           <div className="flex items-center gap-4">
-            <Avatar src={data.workerAvatar} name={data.workerName} size="lg" />
+            <Avatar src={data.workerPicture ?? null} name={data.workerName} size="lg" />
             <div className="min-w-0">
               <h2 className="truncate text-lg font-extrabold text-ink">{data.workerName}</h2>
               <span className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-brand-light px-2.5 py-1 text-xs font-bold text-brand">
                 <Briefcase size={13} />
-                {data.workerRole}
+                {data.workerRole || 'Worker'}
               </span>
             </div>
           </div>
@@ -132,15 +184,17 @@ export default function ResignationDetailPage() {
           <div className="flex items-center justify-between bg-brand px-5 py-4 text-white">
             <div>
               <p className="text-[11px] font-bold uppercase tracking-wider text-white/75">Official Notice Period</p>
-              <p className="text-lg font-extrabold">{data.totalNoticeDays} Days Total</p>
+              <p className="text-lg font-extrabold">{data.totalNoticeDays || 7} Days Total</p>
             </div>
-            <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-bold">{data.remainingDays} left</span>
+            <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-bold">
+              {isAccepted ? 'Accepted' : `${data.remainingDays} left`}
+            </span>
           </div>
           <div className="px-5 py-4">
             <div className="mb-2 flex items-center justify-between text-sm">
               <span className="font-semibold text-subtle">Notice Period Status</span>
               <span className="text-subtle">
-                Remaining Days: <span className="font-bold text-brand">{data.remainingDays}</span>
+                Remaining Days: <span className="font-bold text-brand">{isAccepted ? 0 : data.remainingDays}</span>
               </span>
             </div>
             <div className="h-2 w-full overflow-hidden rounded-full bg-line">
@@ -156,8 +210,16 @@ export default function ResignationDetailPage() {
               <CalendarCheck size={17} />
             </span>
             <div>
-              <p className="label-xs">Last Working Day</p>
-              <p className="text-sm font-bold text-ink">{data.lastWorkingDate}</p>
+              <p className="label-xs">
+                {data.acceptedAtUtc ? 'Job Ended' : data.noticeEndsAtUtc ? 'Notice Deadline' : 'Last Working Day'}
+              </p>
+              <p className="text-sm font-bold text-ink">
+                {data.acceptedAtUtc
+                  ? new Date(data.acceptedAtUtc).toLocaleString()
+                  : data.noticeEndsAtUtc
+                    ? new Date(data.noticeEndsAtUtc).toLocaleString()
+                    : data.lastWorkingDate}
+              </p>
             </div>
           </div>
 
@@ -169,7 +231,7 @@ export default function ResignationDetailPage() {
             </span>
             <div>
               <p className="label-xs">Reason for Leaving</p>
-              <p className="text-sm text-subtle">{data.reason}</p>
+              <p className="text-sm text-subtle">{data.reason || 'Reason not provided.'}</p>
             </div>
           </div>
         </Card>
@@ -188,6 +250,10 @@ export default function ResignationDetailPage() {
               <span className="text-sm font-bold text-ink">{Number(data.workerReview.rating || 0).toFixed(1)}</span>
               <span className="text-xs text-subtle">· {data.workerReview.date}</span>
             </div>
+            <ReviewEndReason
+              endType={data.workerReview.endReasonType || data.workerReview.endType || data.status}
+              reason={data.workerReview.endReason}
+            />
             {data.workerReview.comment && (
               <p className="mt-2 text-sm italic text-subtle">&quot;{data.workerReview.comment}&quot;</p>
             )}
@@ -196,6 +262,9 @@ export default function ResignationDetailPage() {
                 <Briefcase size={12} /> Worked: {data.workerReview.workedPeriod}
               </p>
             )}
+            {data.workerReview.criteria && data.workerReview.criteria.length > 0 && (
+              <CriteriaBreakdown criteria={data.workerReview.criteria} />
+            )}
           </Card>
         )}
 
@@ -203,27 +272,44 @@ export default function ResignationDetailPage() {
         <Card className="lg:col-span-2">
           <div className="mb-4 flex items-center justify-between">
             <h3 className="text-base font-bold text-ink">Your Review</h3>
-            {isConfirmed && (
+            {hasClientReview && (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
                 <CheckCircle2 size={13} /> Saved
               </span>
             )}
           </div>
 
-          {isConfirmed ? (
+          {hasClientReview ? (
             <div>
               <div className="flex items-center gap-2">
                 <RatingStars value={shownRating} size={18} />
                 <span className="text-sm font-bold text-ink">{Number(shownRating || 0).toFixed(1)}</span>
+                {data.clientReview?.date && <span className="text-xs text-subtle">· {data.clientReview.date}</span>}
               </div>
+              <ReviewEndReason
+                endType={data.clientReview?.endReasonType || data.status}
+                reason={data.clientReview?.endReason}
+              />
               {data.clientReview?.comment && (
                 <p className="mt-3 text-sm italic text-subtle">&quot;{data.clientReview.comment}&quot;</p>
               )}
+              {data.clientReview?.criteria && data.clientReview.criteria.length > 0 && (
+                <CriteriaBreakdown criteria={data.clientReview.criteria} />
+              )}
+              <p className="mt-3 inline-flex items-start gap-1.5 rounded-xl bg-emerald-50 p-3 text-xs text-emerald-800">
+                <Lock size={13} className="mt-0.5 shrink-0" />
+                <span>
+                  Your review was saved
+                  {data.clientReview?.date ? ` on ${data.clientReview.date}` : ''}. It can no longer be changed.
+                </span>
+              </p>
             </div>
-          ) : (
+          ) : canSubmit ? (
             <>
               <p className="mb-3 text-sm text-subtle">
-                Rate each criterion for {data.workerName}, then write your remarks.
+                {isAccepted
+                  ? `This resignation is accepted. Rate each criterion for ${data.workerName}, then write your remarks.`
+                  : `Rate each criterion for ${data.workerName}, then write your remarks.`}
               </p>
               <CriteriaReviewSection
                 interviewId={data.interviewId}
@@ -239,9 +325,11 @@ export default function ResignationDetailPage() {
                 onChange={(e) => setRemarks(e.target.value)}
               />
               <Button className="mt-4" size="lg" loading={isSubmitting} onClick={handleConfirmResignation}>
-                Confirm Resignation
+                {isAccepted ? 'Submit Review' : 'Confirm Resignation'}
               </Button>
             </>
+          ) : (
+            <p className="text-sm text-subtle">This contract has closed. No resignation action is available.</p>
           )}
         </Card>
       </div>

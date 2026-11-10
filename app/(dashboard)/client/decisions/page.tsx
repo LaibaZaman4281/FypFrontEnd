@@ -17,6 +17,7 @@ import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import PageHeader from '@/components/ui/PageHeader';
 import { JobTypeBadge, SlotTimeLabel } from '@/components/ui/Badge';
+import ExclusiveJobNotice from '@/components/features/jobs/ExclusiveJobNotice';
 import { EmptyState, Loader } from '@/components/ui/States';
 import { DashboardService } from '@/lib/api/services';
 import NotificationHelper from '@/lib/hooks/useNotification';
@@ -119,6 +120,7 @@ export default function WorkerDecisionsPage() {
 
                     <div className="mt-1.5 flex flex-wrap gap-1.5">
                       <JobTypeBadge jobType={item.jobType} />
+                      <ExclusiveJobNotice item={item} variant="commitment" />
                       <SlotTimeLabel startTime={item.slotStartTime} endTime={item.slotEndTime} />
                     </div>
 

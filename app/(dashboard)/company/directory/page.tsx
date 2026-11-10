@@ -32,7 +32,7 @@ export default function WorkerDirectoryPage() {
   const loadUserData = useCallback(async () => {
     try {
       const savedName = Storage.getItem('userName');
-      const companyId = Storage.getItem('companyId') || Storage.getItem('userId');
+      const companyId = Storage.getItem('companyId');
       if (savedName) setCompanyName(savedName);
 
       if (companyId) {
@@ -92,7 +92,12 @@ export default function WorkerDirectoryPage() {
 
   return (
     <div>
-      <PageHeader title="Worker Directory" subtitle={`Signed in as ${companyName} — issue training certificates to verified personnel.`} />
+      <PageHeader
+        title="Worker Directory"
+        subtitle={`Signed in as ${companyName} — issue training certificates to verified personnel.`}
+        back
+        backHref="/company/courses"
+      />
 
       <Card className="mb-5">
         <label className="relative block">

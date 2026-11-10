@@ -55,7 +55,7 @@ export default function WorkerVerificationPage() {
 
     try {
       setIsSubmitting(true);
-      const companyIdRaw = Storage.getItem('companyId') || Storage.getItem('userId');
+      const companyIdRaw = Storage.getItem('companyId');
       const companyId = parseInt(companyIdRaw ?? '', 10);
 
       if (!companyId || Number.isNaN(companyId)) {

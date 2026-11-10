@@ -6,7 +6,8 @@
  * Unchanged: the POST body ({ Role, EmailOrCnic, Password }), the multiSet of
  * session keys, the role-based redirect targets, the placeholder/keyboard logic
  * per role, and the "Remember Me" / "Forgot Password?" controls that existed in
- * the original UI.
+ * the original UI. "Forgot Password?" stays a non-interactive hint because the RN
+ * control it mirrors was a plain <Text> and the backend exposes no reset route.
  */
 
 import { useState } from 'react';
@@ -93,28 +94,7 @@ export default function LoginPage() {
       });
 
       // 1. Session key/value pairs - identical names to the mobile app
-      const storageItems: [string, string][] = [
-        ['userToken', result.token || ''],
-        ['userRole', result.role || role],
-        ['userName', result.name || ''],
-        ['userPicture', result.picture || ''],
-        ['userAddress', result.address || ''],
-        ['userPhone', result.phone || ''],
-        ['userEmail', result.email || (role === 'Client' ? trimmedIdentifier : '')],
-      ];
-
-      // 2. Role-specific IDs, only when the API provided them
-      if (result.clientId != null) storageItems.push(['clientId', result.clientId.toString()]);
-      if (result.workerId != null) storageItems.push(['workerId', result.workerId.toString()]);
-      if (result.companyId != null) storageItems.push(['companyId', result.companyId.toString()]);
-      if (result.policeId != null) storageItems.push(['policeId', result.policeId.toString()]);
-
-      // Client coordinates come back on the login response for the Client role
-      if (result.latitude != null) storageItems.push(['clientLatitude', String(result.latitude)]);
-      if (result.longitude != null) storageItems.push(['clientLongitude', String(result.longitude)]);
-
-      Storage.multiSet(storageItems);
-      Storage.setItem('rememberMe', rememberMe ? 'true' : 'false');
+      Storage.saveLoginSession(result, rememberMe);
 
       NotificationHelper.showSuccess('Login Successful!');
 
@@ -215,9 +195,11 @@ export default function LoginPage() {
               />
               Remember Me
             </label>
-            <button type="button" className="text-sm font-semibold text-brand hover:underline">
+            {/* The RN screen rendered this as plain, non-pressable text — there is no
+                password-reset endpoint on the backend, so it stays a hint, not a button. */}
+            <span className="text-sm font-semibold text-brand/70" title="Ask your company administrator to reset it">
               Forgot Password?
-            </button>
+            </span>
           </div>
 
           <Button type="submit" size="lg" fullWidth loading={isLoading}>

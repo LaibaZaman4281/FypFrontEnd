@@ -3,24 +3,29 @@
 /**
  * Port of `assets/components/Client/FindServiceScreen.js`.
  *
- * Unchanged: the GetFiltersData category tabs, the exact GetWorkersForClient
- * query-string construction (search, repeated `categories`, gender, city,
- * repeated `subSkills`, plus `habitIds` the backend already supports), the 300ms
- * debounce, and the 401 -> /login rule.
+ * Same flow and logic as the RN screen:
+ *   header -> search -> category tabs -> Filter / Map -> results
+ * with `Filter` opening the standalone `/client/filters` screen (RN's
+ * `FilterationScreen`) and `Map` handing the worker list to `/map`.
  *
- * Web-first layout: sticky filter sidebar on desktop, drawer on mobile, and a
- * responsive card grid instead of a single-column FlatList.
+ * Unchanged from RN: GetFiltersData category tabs, the exact GetWorkersForClient
+ * query-string construction (search, repeated `categories`, gender, city,
+ * repeated `subSkills`, `habitIds`), the 300ms debounce, and the 401 -> /login rule.
+ *
+ * Layout is web-native: a sticky toolbar holds the search + actions, and the
+ * single-column FlatList becomes a responsive card grid (1 / 2 / 3 / 4 columns) so
+ * a wide desktop window is actually used. Grid items stretch to equal height.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Map as MapIcon, Search, SlidersHorizontal, UserSearch } from 'lucide-react';
+import { Filter, Map as MapIcon, Search, UserSearch } from 'lucide-react';
+import Avatar from '@/components/ui/Avatar';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
-import Modal from '@/components/ui/Modal';
 import Tabs from '@/components/ui/Tabs';
 import { EmptyState, SkeletonCard } from '@/components/ui/States';
-import FiltersPanel from '@/components/features/client/FiltersPanel';
 import WorkerResultCard from '@/components/features/client/WorkerResultCard';
 import { DashboardService } from '@/lib/api/services';
 import { ApiError } from '@/lib/api/client';
@@ -33,7 +38,7 @@ import type { WorkerCard } from '@/types';
 export default function FindServicePage() {
   const router = useRouter();
   const { session } = useSession();
-  const { filters, ready, update, reset } = useClientFilters();
+  const { filters, ready } = useClientFilters();
 
   const [search, setSearch] = useState('');
   const [categoriesList, setCategoriesList] = useState<string[]>(['All']);
@@ -41,7 +46,6 @@ export default function FindServicePage() {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [workers, setWorkers] = useState<WorkerCard[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [filtersOpen, setFiltersOpen] = useState(false);
 
   /* ---- categories for the tab row ---- */
   useEffect(() => {
@@ -96,7 +100,7 @@ export default function FindServicePage() {
           query += `gender=${encodeURIComponent(currentFilters.gender)}&`;
         }
 
-        if (currentFilters.city) {
+        if (currentFilters.city && currentFilters.city !== 'All') {
           query += `city=${encodeURIComponent(currentFilters.city)}&`;
         }
 
@@ -148,101 +152,118 @@ export default function FindServicePage() {
 
   const activeCount = useMemo(() => countActiveFilters(filters), [filters]);
 
+  const openFilters = () => {
+    const suffix = filters.city ? `?city=${encodeURIComponent(filters.city)}` : '';
+    router.push(`/client/filters${suffix}`);
+  };
+
   const tabItems = categoriesList.map((cat) => ({ label: cat, value: cat }));
 
   return (
-    <div>
-      {/* ---------- Hero ---------- */}
-      <section className="mb-6 overflow-hidden rounded-3xl bg-brand px-6 py-8 text-white sm:px-10">
-        <p className="text-sm font-semibold text-white/75">Welcome, {session.name || 'Client'}</p>
-        <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">What would you like to do?</h1>
-        <p className="mt-2 max-w-xl text-sm text-white/80">
-          Search verified domestic workers by category, skills, habits and city — then book an interview
-          against their published time slots.
-        </p>
+    <div className="mx-auto max-w-[1400px]">
+      {/* ---------- Header ---------- */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-brand">Find Service</p>
+          <h1 className="mt-1 truncate text-2xl font-extrabold tracking-tight text-ink sm:text-[26px]">
+            What would you like to do?
+          </h1>
+          <p className="mt-1 text-sm text-subtle">
+            Welcome back, {session.name || 'Client'} — pick a category or filter to narrow the list.
+          </p>
+        </div>
 
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+        <Link
+          href="/client/dashboard"
+          aria-label="Open my dashboard"
+          className="shrink-0 rounded-full ring-2 ring-transparent transition hover:ring-brand/30"
+        >
+          <Avatar src={session.picture} name={session.name} size="md" />
+        </Link>
+      </div>
+
+      {/* ---------- Sticky toolbar: search + actions ---------- */}
+      <div className="sticky top-16 z-10 -mx-4 mt-5 bg-canvas/85 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <label className="relative flex-1">
-            <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
+            <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by Name"
-              className="h-12 w-full rounded-xl border-0 pl-11 pr-4 text-[15px] text-ink placeholder:text-muted focus:outline-none focus:ring-4 focus:ring-white/30"
+              className="h-11 w-full rounded-xl border border-line bg-white pl-10 pr-4 text-sm text-ink placeholder:text-muted focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
             />
           </label>
 
-          <div className="flex gap-3">
-            <Button variant="outline" size="lg" className="lg:hidden" icon={<SlidersHorizontal size={16} />} onClick={() => setFiltersOpen(true)}>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              icon={<Filter size={15} />}
+              onClick={openFilters}
+              className="flex-1 sm:flex-none"
+            >
               Filters{activeCount > 0 ? ` (${activeCount})` : ''}
             </Button>
-            <Button variant="outline" size="lg" icon={<MapIcon size={16} />} onClick={openMap}>
+            <Button
+              variant="secondary"
+              icon={<MapIcon size={15} />}
+              onClick={openMap}
+              className="flex-1 sm:flex-none"
+            >
               Map
             </Button>
           </div>
         </div>
-      </section>
 
-      <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
-        {/* ---------- Desktop filter rail ---------- */}
-        <aside className="hidden lg:block">
-          <Card className="sticky top-24">
-            <h2 className="mb-4 text-base font-bold text-ink">Filters</h2>
-            {ready && (
-              <FiltersPanel
-                value={filters}
-                onApply={update}
-                onReset={reset}
-              />
-            )}
-          </Card>
-        </aside>
-
-        {/* ---------- Results ---------- */}
-        <section>
-          <Tabs items={tabItems} value={selectedCategory} onChange={setSelectedCategory} className="mb-4" />
-
-          <p className="mb-4 text-sm font-semibold text-subtle">{workers.length} Total Results</p>
-
-          {isLoading ? (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {[0, 1, 2, 3].map((i) => (
-                <SkeletonCard key={i} />
-              ))}
-            </div>
-          ) : workers.length === 0 ? (
-            <EmptyState
-              title="No workers found"
-              message="Try clearing a filter or searching a different name."
-              icon={<UserSearch size={24} />}
-              action={
-                <Button variant="secondary" onClick={reset}>
-                  Reset filters
-                </Button>
-              }
-            />
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {workers.map((worker) => (
-                <WorkerResultCard key={worker.id} worker={worker} />
-              ))}
-            </div>
-          )}
-        </section>
+        {/* category tabs, horizontally scrollable under the toolbar on narrow screens */}
+        <div className="mt-2.5 -mx-1 overflow-x-auto px-1">
+          <Tabs items={tabItems} value={selectedCategory} onChange={setSelectedCategory} className="pb-1" />
+        </div>
       </div>
 
-      {/* ---------- Mobile filter drawer ---------- */}
-      <Modal open={filtersOpen} onClose={() => setFiltersOpen(false)} title="Filteration" size="md">
-        {ready && (
-          <FiltersPanel
-            value={filters}
-            onApply={update}
-            onReset={reset}
-            onClose={() => setFiltersOpen(false)}
-            compact
-          />
+      {/* ---------- Results header ---------- */}
+      <div className="mb-3 mt-1 flex items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-ink">
+          {isLoading ? 'Searching…' : `${workers.length} worker${workers.length === 1 ? '' : 's'} found`}
+        </p>
+        {activeCount > 0 && (
+          <button
+            type="button"
+            onClick={openFilters}
+            className="text-xs font-bold text-brand hover:underline"
+          >
+            {activeCount} filter{activeCount === 1 ? '' : 's'} active
+          </button>
         )}
-      </Modal>
+      </div>
+
+      {/* ---------- Results grid ---------- */}
+      {isLoading ? (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <SkeletonCard key={i} />
+          ))}
+        </div>
+      ) : workers.length === 0 ? (
+        <Card>
+          <EmptyState
+            title="No workers found"
+            message="Try clearing a filter or searching a different name."
+            icon={<UserSearch size={24} />}
+            action={
+              <Button variant="secondary" icon={<Filter size={15} />} onClick={openFilters}>
+                Open filters
+              </Button>
+            }
+          />
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+          {workers.map((worker) => (
+            <WorkerResultCard key={worker.id} worker={worker} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

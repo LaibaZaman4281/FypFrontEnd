@@ -38,6 +38,7 @@ import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import PageHeader from '@/components/ui/PageHeader';
 import Tabs from '@/components/ui/Tabs';
+import ReviewCard from '@/components/features/reviews/ReviewCard';
 import { RatingStars } from '@/components/ui/Rating';
 import { EmptyState, Loader } from '@/components/ui/States';
 import { API_DASHBOARD } from '@/lib/config';
@@ -345,23 +346,25 @@ export default function WorkerDetailPage() {
 
               {w.reviews && w.reviews.length > 0 ? (
                 w.reviews.map((rev: any, index: number) => (
-                  <Card key={index}>
-                    <div className="flex items-start justify-between gap-3">
-                      {rev.clientId ? (
-                        <Link href={`/client/profile?clientId=${rev.clientId}`} className="text-sm font-bold text-brand underline">
-                          {rev.reviewerName}
-                        </Link>
-                      ) : (
-                        <span className="text-sm font-bold text-ink">{rev.reviewerName}</span>
-                      )}
-                      <RatingStars value={rev.rating} />
-                    </div>
-                    <p className="mt-1 text-xs text-subtle">{rev.date}</p>
-                    {rev.workedPeriod && (
-                      <p className="mt-1 text-xs font-semibold text-brand">Worked: {rev.workedPeriod}</p>
-                    )}
-                    <p className="mt-2 text-sm italic text-subtle">&ldquo;{rev.comment}&rdquo;</p>
-                  </Card>
+                  /* RN's WorkerDetailScreen renders the shared ReviewCard here and
+                     passes endReasonType / endReason / criteria through. The web
+                     only drew name + stars + comment, so a terminated or resigned
+                     contract showed no reason and the per-criterion breakdown was
+                     missing entirely. */
+                  <ReviewCard
+                    key={rev.id ?? rev.reviewId ?? index}
+                    name={rev.reviewerName || rev.name || 'Customer'}
+                    image={rev.reviewerImage || rev.clientImage}
+                    nameHref={rev.clientId ? `/client/profile?clientId=${rev.clientId}` : undefined}
+                    rating={Number(rev.rating) || 0}
+                    date={rev.date}
+                    workedPeriod={rev.workedPeriod}
+                    endType={rev.endType}
+                    endReasonType={rev.endReasonType}
+                    endReason={rev.endReason}
+                    text={rev.comment}
+                    criteria={rev.criteria}
+                  />
                 ))
               ) : (
                 <EmptyState title="No reviews submitted yet." icon={<MessageSquare size={24} />} />

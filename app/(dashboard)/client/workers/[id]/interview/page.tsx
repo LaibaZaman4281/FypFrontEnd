@@ -13,9 +13,10 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { CalendarDays, Clock4, Home, MapPin } from 'lucide-react';
+import { CalendarDays, Clock4, Home, Lock, MapPin } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
+import Modal from '@/components/ui/Modal';
 import PageHeader from '@/components/ui/PageHeader';
 import Toggle from '@/components/ui/Toggle';
 import { Input } from '@/components/ui/Field';
@@ -25,6 +26,7 @@ import NotificationHelper from '@/lib/hooks/useNotification';
 import Storage from '@/lib/storage';
 import { cn } from '@/lib/utils/cn';
 import { jobTypeLabel } from '@/lib/utils/status';
+import { ACTIVE_FULL_TIME_JOB, EXCLUSIVE_COPY } from '@/lib/utils/exclusiveJob';
 
 const toDateKey = (value: Date) => {
   const year = value.getFullYear();
@@ -63,6 +65,12 @@ function InterviewSelection() {
   const [radius, setRadius] = useState<number | null>(null);
   const [distanceKm, setDistanceKm] = useState<number | null>(null);
   const [selectedSlotId, setSelectedSlotId] = useState<number | null>(null);
+  /* "Worker Exclusive Job" (RN a70d626): an exclusive full-time booking locks the
+     worker against other full-time work once the client confirms hiring. */
+  const [isExclusive, setIsExclusive] = useState(false);
+  const [jobTypeResolved, setJobTypeResolved] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState(false);
+  const [exclusiveConflict, setExclusiveConflict] = useState(false);
 
   const submittingRef = useRef(false);
 
@@ -77,11 +85,19 @@ function InterviewSelection() {
       const data: any = await apiFetch(`${API_DASHBOARD}/GetWorkerAvailableSlots/${workerId}?date=${dateKey}`);
       setSlots(Array.isArray(data?.slots) ? data.slots : []);
       setHasSlots(!!data?.hasSlots);
-      setIsPartTime(!!data?.isPartTimeAvailable);
+      if (typeof data?.isPartTimeAvailable === 'boolean') {
+        setIsPartTime(data.isPartTimeAvailable);
+        setJobTypeResolved(true);
+      } else {
+        // Without a verdict we cannot know whether a slot is required, so the
+        // booking stays blocked instead of silently booking the wrong type.
+        setAvailabilityError(true);
+      }
       setRadius(data?.radius ?? null);
       setDistanceKm(data?.distanceKm ?? null);
     } catch {
       setSlots([]);
+      setAvailabilityError(true);
     } finally {
       setSlotsLoading(false);
     }
@@ -96,12 +112,20 @@ function InterviewSelection() {
   }, [dateKey]);
 
   const selectedSlot = slots.find((slot) => slot.id === selectedSlotId) || null;
-  const bookingBlockedBySlots = isPartTime && !slotsLoading && (!hasSlots || slots.length === 0);
+  const bookingBlockedBySlots = jobTypeResolved && isPartTime && !slotsLoading && (!hasSlots || slots.length === 0);
   const needsSlot = isPartTime && !bookingBlockedBySlots;
-  const canConfirm = !isLoading && !slotsLoading && !bookingBlockedBySlots && (!needsSlot || !!selectedSlot);
+  const canConfirm =
+    jobTypeResolved && !isLoading && !slotsLoading && !bookingBlockedBySlots && (!needsSlot || !!selectedSlot);
 
-  const handleConfirmInterview = async () => {
+  const handleConfirmInterview = async (forceNonExclusive = false) => {
     if (submittingRef.current) return;
+
+    if (!jobTypeResolved) {
+      NotificationHelper.showError(
+        'Still checking whether this is a part-time or full-time booking. Please try again.',
+      );
+      return;
+    }
 
     if (bookingBlockedBySlots) {
       NotificationHelper.showError('This worker has not published any time slots yet.');
@@ -111,6 +135,9 @@ function InterviewSelection() {
       NotificationHelper.showError("Please pick one of the worker's time slots.");
       return;
     }
+
+    const isForcedNonExclusive = forceNonExclusive === true;
+    const requestedExclusive = !isPartTime && isExclusive && !isForcedNonExclusive;
 
     submittingRef.current = true;
     setIsLoading(true);
@@ -126,12 +153,13 @@ function InterviewSelection() {
       const data: any = await apiFetch(`${API_DASHBOARD}/BookInterview`, {
         method: 'POST',
         body: {
-          WorkerId: workerId,
+          WorkerId: parseInt(String(workerId), 10),
           InterviewDate: localISOTime,
           Address: clientAddress,
           Status: 'Pending',
           SlotId: isPartTime && selectedSlot ? selectedSlot.id : null,
           IsResidenceProvided: !isPartTime ? isResidenceProvided : false,
+          IsExclusive: requestedExclusive,
         },
       });
 
@@ -139,9 +167,22 @@ function InterviewSelection() {
       const slotLabel = isPartTime && selectedSlot ? ` (${selectedSlot.startTime} - ${selectedSlot.endTime})` : '';
 
       NotificationHelper.showSuccess(`${typeLabel} interview request sent to ${workerName}${slotLabel}!`);
+
+      if (requestedExclusive && data?.isExclusive !== true) {
+        NotificationHelper.showError(
+          'The interview was created, but the server did not confirm exclusivity. Please verify the backend deployment before relying on this condition.',
+        );
+      }
+
       router.replace('/client/dashboard');
     } catch (error: any) {
-      NotificationHelper.showError(error?.message || 'Failed to book interview.');
+      // The backend refuses an exclusive booking when the worker already holds an
+      // active full-time job. Offer the same two choices the mobile app did.
+      if (error?.status === 409 && error?.code === ACTIVE_FULL_TIME_JOB && isExclusive && !isForcedNonExclusive) {
+        setExclusiveConflict(true);
+      } else {
+        NotificationHelper.showError(error?.message || 'Failed to book interview.');
+      }
     } finally {
       submittingRef.current = false;
       setIsLoading(false);
@@ -151,6 +192,13 @@ function InterviewSelection() {
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeader title="Select Date & Time" subtitle={`When do you need to interview ${workerName}?`} back />
+
+      {availabilityError && (
+        <div role="alert" className="mb-5 rounded-xl bg-rose-50 p-3 text-xs leading-relaxed text-danger">
+          Could not confirm whether this worker takes part-time or full-time bookings, so the request is disabled.
+          Refresh the page to try again.
+        </div>
+      )}
 
       {isPartTime && (
         <Card className="mb-5 border-amber-200 bg-amber-50">
@@ -235,23 +283,72 @@ function InterviewSelection() {
             )}
           </Card>
         ) : (
-          <Card>
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <h2 className="text-base font-bold text-ink">Residence provided</h2>
-                <p className="mt-0.5 text-sm text-subtle">
-                  Turn this on if the worker will live at your residence (full-time hiring only).
-                </p>
+          <>
+            <Card>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-base font-bold text-ink">Residence provided</h2>
+                  <p className="mt-0.5 text-sm text-subtle">
+                    Turn this on if the worker will live at your residence (full-time hiring only).
+                  </p>
+                </div>
+                <Toggle checked={isResidenceProvided} onChange={setIsResidenceProvided} label="Residence provided" />
               </div>
-              <Toggle checked={isResidenceProvided} onChange={setIsResidenceProvided} label="Residence provided" />
-            </div>
-          </Card>
+            </Card>
+
+            {/* Full-Time Exclusivity — RN commit a70d626 */}
+            <Card>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
+                    <Lock size={18} />
+                  </span>
+                  <div>
+                    <h2 className="text-base font-bold text-ink">Exclusive full-time work?</h2>
+                    <p className="mt-0.5 text-sm text-subtle">
+                      {isExclusive ? EXCLUSIVE_COPY.toggleOn : EXCLUSIVE_COPY.toggleOff}
+                    </p>
+                  </div>
+                </div>
+                <Toggle checked={isExclusive} onChange={setIsExclusive} label="Exclusive full-time work" />
+              </div>
+            </Card>
+          </>
         )}
 
-        <Button size="lg" fullWidth loading={isLoading} disabled={!canConfirm} onClick={handleConfirmInterview}>
+        <Button size="lg" fullWidth loading={isLoading} disabled={!canConfirm} onClick={() => handleConfirmInterview(false)}>
           Confirm Interview Request
         </Button>
       </div>
+
+      <Modal
+        open={exclusiveConflict}
+        onClose={() => setExclusiveConflict(false)}
+        title={EXCLUSIVE_COPY.conflictTitle}
+        description={EXCLUSIVE_COPY.conflictMessage}
+      >
+        <div className="mt-5 flex flex-col gap-2 sm:flex-row-reverse">
+          <Button
+            fullWidth
+            onClick={() => {
+              setExclusiveConflict(false);
+              void handleConfirmInterview(true);
+            }}
+          >
+            Proceed non-exclusive
+          </Button>
+          <Button
+            fullWidth
+            variant="outline"
+            onClick={() => {
+              setExclusiveConflict(false);
+              router.push('/client/find-service');
+            }}
+          >
+            Find another worker
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 }

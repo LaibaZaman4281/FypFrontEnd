@@ -18,6 +18,7 @@ import { JobTypeBadge, ResidenceBadge, SlotTimeLabel } from '@/components/ui/Bad
 import { EmptyState, Loader } from '@/components/ui/States';
 import { DashboardService } from '@/lib/api/services';
 import NotificationHelper from '@/lib/hooks/useNotification';
+import ExclusiveJobNotice from '@/components/features/jobs/ExclusiveJobNotice';
 import { cn } from '@/lib/utils/cn';
 
 export default function WorkerActiveRequestsPage() {
@@ -25,10 +26,20 @@ export default function WorkerActiveRequestsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  /* A notification links here as ?interviewId=<id>; the backend filters the list,
+     so the worker lands on the one interview they tapped — never the whole inbox. */
+  const [focusInterviewId, setFocusInterviewId] = useState<string | null>(null);
+  const [queryReady, setQueryReady] = useState(false);
+
+  useEffect(() => {
+    setFocusInterviewId(new URLSearchParams(window.location.search).get('interviewId'));
+    setQueryReady(true);
+  }, []);
+
   const fetchRequests = useCallback(async (showLoader = true) => {
     if (showLoader) setIsLoading(true);
     try {
-      const data: any = await DashboardService.getWorkerRequests();
+      const data: any = await DashboardService.getWorkerRequests(focusInterviewId ?? undefined);
       setRequests(Array.isArray(data) ? data : []);
     } catch {
       NotificationHelper.showError('Failed to load requests.');
@@ -36,11 +47,11 @@ export default function WorkerActiveRequestsPage() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, []);
+  }, [focusInterviewId]);
 
   useEffect(() => {
-    fetchRequests();
-  }, [fetchRequests]);
+    if (queryReady) fetchRequests();
+  }, [queryReady, fetchRequests]);
 
   const handleStatusUpdate = async (id: number, decision: 'Accepted' | 'Rejected') => {
     try {
@@ -131,6 +142,8 @@ export default function WorkerActiveRequestsPage() {
                   <ResidenceBadge isResidenceProvided={item.isResidenceProvided} />
                   <SlotTimeLabel startTime={item.slotStartTime} endTime={item.slotEndTime} />
                 </div>
+
+                <ExclusiveJobNotice item={item} variant="request" />
 
                 {item.address && <p className="mt-3 text-sm text-subtle">{item.address}</p>}
 

@@ -52,7 +52,16 @@ import Modal from '@/components/ui/Modal';
 import SkillsBuilder, { type ExperienceRecord, type SkillRecord } from '@/components/features/skills/SkillsBuilder';
 import NotificationHelper from '@/lib/hooks/useNotification';
 import { API_ACCOUNT, SERVER_BASE, resolveImage } from '@/lib/config';
-import { HabitsService } from '@/lib/api/services';
+import HabitChoice from '@/components/features/habits/HabitChoice';
+import {
+  fetchWorkerHabitCatalog,
+  findExclusiveGroupConflict,
+  getHabitId,
+  HABIT_COPY,
+  normalizeHabitIds,
+  toggleHabitSelection,
+  type HabitRow,
+} from '@/lib/habits';
 import Storage from '@/lib/storage';
 import { cn } from '@/lib/utils/cn';
 import type { Habit, UserRole } from '@/types';
@@ -99,7 +108,7 @@ function SignupForm() {
   const [gender, setGender] = useState('Male');
   const [bio, setBio] = useState('');
 
-  const [habitsCatalog, setHabitsCatalog] = useState<Habit[]>([]);
+  const [habitsCatalog, setHabitsCatalog] = useState<HabitRow[]>([]);
   const [selectedHabitIds, setSelectedHabitIds] = useState<number[]>([]);
   const [isLoadingHabits, setIsLoadingHabits] = useState(false);
   const [habitsPrefilled, setHabitsPrefilled] = useState(false);
@@ -168,7 +177,7 @@ function SignupForm() {
           );
         }
         if (Array.isArray(data.habits)) {
-          setSelectedHabitIds(data.habits.map((h: any) => h.id ?? h.habitId).filter(Boolean));
+          setSelectedHabitIds(normalizeHabitIds(data.habits.map((h: any) => h?.id ?? h?.habitId)));
         }
         setHabitsPrefilled(true);
       } else if (targetRole === 'Company') {
@@ -192,8 +201,8 @@ function SignupForm() {
     (async () => {
       try {
         setIsLoadingHabits(true);
-        const list = await HabitsService.getHabits();
-        if (!cancelled) setHabitsCatalog(Array.isArray(list) ? list : []);
+        const list = await fetchWorkerHabitCatalog();
+        if (!cancelled) setHabitsCatalog(list);
       } catch {
         /* same as RN: silent, the step shows a retry hint */
       } finally {
@@ -206,8 +215,11 @@ function SignupForm() {
     };
   }, [role]);
 
+  /* RN's signup step toggles blindly, but the server enforces
+     HabitSelectionRules on SignupWorker/UpdateWorker, so the pair rule is applied
+     here — otherwise a contradictory pick only fails at submit time. */
   const toggleHabit = (habitId: number) => {
-    setSelectedHabitIds((prev) => (prev.includes(habitId) ? prev.filter((id) => id !== habitId) : [...prev, habitId]));
+    setSelectedHabitIds((prev) => toggleHabitSelection(prev, habitId, habitsCatalog));
   };
 
   const pickImage = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -289,6 +301,7 @@ function SignupForm() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), SIGNUP_TIMEOUT_MS);
 
+    let succeeded = false;
     setIsLoading(true);
     try {
       const token = Storage.getItem('userToken');
@@ -312,11 +325,28 @@ function SignupForm() {
 
       if (response.ok) {
         setPendingLocation(null);
+        /* The named/phone/address/picture keys are otherwise only written at login,
+           so without this the sidebar keeps the old name and the next skills save
+           re-sends the old profile over the one just saved. */
+        if (isEditMode) {
+          Storage.applyProfileToSession({
+            name: role === 'Company' ? companyName : name,
+            phone,
+            address,
+            email,
+            picture: typeof result.picture === 'string' ? result.picture : null,
+          });
+        }
+        succeeded = true; // keep the submit guard closed through the redirect delay
         NotificationHelper.showSuccess(result.message || 'Operation completed successfully!');
         setTimeout(() => {
           if (isEditMode) {
             window.sessionStorage.removeItem('editProfileDraft');
-            router.push(role === 'Worker' ? '/worker/dashboard' : '/client/dashboard');
+            // Each role returns to its own portal. Companies used to be sent to
+            // /client/dashboard, whose guard then bounced them to /login.
+            router.push(
+              role === 'Worker' ? '/worker/dashboard' : role === 'Company' ? '/company/profile' : '/client/dashboard',
+            );
           } else {
             router.replace('/login');
           }
@@ -335,7 +365,7 @@ function SignupForm() {
       }
     } finally {
       clearTimeout(timeoutId);
-      submittingRef.current = false;
+      if (!succeeded) submittingRef.current = false;
       setIsLoading(false);
     }
   };
@@ -368,6 +398,12 @@ function SignupForm() {
 
     if (role === 'Worker' && skillsJsonData.length === 0) {
       NotificationHelper.showError('Please select at least one sub-skill to proceed.');
+      return;
+    }
+
+    /* Same pair rule the server applies on SignupWorker / UpdateWorker. */
+    if (role === 'Worker' && findExclusiveGroupConflict(selectedHabitIds, habitsCatalog)) {
+      NotificationHelper.showError(HABIT_COPY.conflict);
       return;
     }
 
@@ -622,24 +658,15 @@ function SignupForm() {
             <p className="py-4 text-sm text-subtle">Could not load the habit list. Check your connection and reopen this step.</p>
           ) : (
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {habitsCatalog.map((habit: any) => {
-                const habitId = habit.habitId ?? habit.id;
-                const isChecked = selectedHabitIds.includes(habitId);
+              {habitsCatalog.map((habit) => {
+                const habitId = getHabitId(habit);
                 return (
-                  <button
+                  <HabitChoice
                     key={habitId}
-                    type="button"
-                    onClick={() => toggleHabit(habitId)}
-                    className={cn(
-                      'flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-sm font-semibold transition',
-                      isChecked ? 'border-brand bg-brand-light text-brand' : 'border-line bg-white text-subtle hover:bg-canvas',
-                    )}
-                  >
-                    <span className={cn('flex h-5 w-5 items-center justify-center rounded border', isChecked ? 'border-brand bg-brand text-white' : 'border-line')}>
-                      {isChecked && <Check size={13} />}
-                    </span>
-                    {habit.name ?? habit.habitName}
-                  </button>
+                    habit={habit}
+                    selected={selectedHabitIds.includes(habitId)}
+                    onToggle={() => toggleHabit(habitId)}
+                  />
                 );
               })}
             </div>
